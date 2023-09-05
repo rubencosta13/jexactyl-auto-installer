@@ -18,6 +18,43 @@ log_error_and_exit() {
     exit 1
 }
 
+install_and_configure_redis() {
+    display_activity "Installing and configuring Redis"
+
+    # Check if redis_password is defined in .env
+    if [ -n "$redis_password" ]; then
+        # Debian/Ubuntu
+        if [ -f /etc/debian_version ]; then
+            apt-get -y install redis-server || log_error_and_exit "Failed to install Redis."
+            # Set Redis password
+            echo "requirepass $redis_password" | tee -a /etc/redis/redis.conf
+            systemctl restart redis-server || log_error_and_exit "Failed to restart Redis."
+        # Alpine
+        elif [ -f /etc/alpine-release ]; then
+            apk add --no-cache redis || log_error_and_exit "Failed to install Redis."
+            # Set Redis password
+            echo "requirepass $redis_password" | tee -a /etc/redis/redis.conf
+            rc-service redis restart || log_error_and_exit "Failed to restart Redis."
+        # CentOS
+        elif [ -f /etc/centos-release ]; then
+            yum -y install epel-release || log_error_and_exit "Failed to install EPEL repository."
+            yum -y install redis || log_error_and_exit "Failed to install Redis."
+            # Set Redis password
+            echo "requirepass $redis_password" | tee -a /etc/redis.conf
+            systemctl restart redis || log_error_and_exit "Failed to restart Redis."
+        else
+            log_error_and_exit "Unsupported distribution."
+        fi
+
+        # Test Redis connection
+        redis-cli -a "$redis_password" ping || log_error_and_exit "Failed to connect to Redis with the provided password."
+
+        log_success "Redis installed, configured, and connection tested successfully."
+    else
+        log_error_and_exit "The 'redis_password' parameter is not defined in the .env file."
+    fi
+}
+
 # Function to check if a command succeeded
 check_command_status() {
     if [ $? -ne 0 ]; then
@@ -75,7 +112,7 @@ parse_env() {
 parse_env
 
 # Check if required parameters are provided
-if [ -z "$root_password" ] || [ -z "$db_user" ] || [ -z "$db_user_password" ]; then
+if [ -z "$db_root_password" ] || [ -z "$db_user" ] || [ -z "$db_user_password" ]; then
     log_error_and_exit "The .env file is missing required parameters: root_password, db_user, or db_user_password."
 fi
 
@@ -134,6 +171,9 @@ else
     log_error_and_exit "Unsupported distribution."
 fi
 
+
+install_and_configure_redis
+
 # Install Composer locally for the current user
 log_success "Installing Composer locally..."
 php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
@@ -150,7 +190,7 @@ chmod -R 755 storage/* bootstrap/cache/
 
 # Set up MySQL user and database
 log_success "Setting up MySQL user and database..."
-mysql -u root -p"$root_password" <<MYSQL_SCRIPT
+mysql -u root -p"$db_root_password" <<MYSQL_SCRIPT
 CREATE USER '$db_user'@'127.0.0.1' IDENTIFIED BY '$db_user_password';
 CREATE DATABASE panel;
 GRANT ALL PRIVILEGES ON panel.* TO '$db_user'@'127.0.0.1' WITH GRANT OPTION;
@@ -167,3 +207,11 @@ COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader
 php artisan key:generate --force
 
 log_success "Installation completed."
+
+
+local timezone
+timezone=$(date +%Z)
+php artisan p:environment:setup --author="$egg_author_email" --url="$panel_url" --timezone="$timezone" --cache='redis' --session='redis' --queue='redis' --redis-host='localhost' --redis-pass="$redis_password" --redis-port="6379" --settings-ui=true
+php artisan p:environment:database --host="$db_host" --port="3306" --database="panel" --username="$db_user" --password="$db_user_password"
+
+php artisan migrate --seed --force
