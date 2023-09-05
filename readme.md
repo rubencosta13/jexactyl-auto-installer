@@ -30,7 +30,7 @@ Follow these steps to use the installation script and install jexactyl:
 
     ```bash
     git clone https://github.com/rubencosta13/jexactyl-auto-installer.git
-    cd your-repo
+    cd jexactyl-auto-installer
     ```
 
 2. **Edit .env Configuration:** Before running the script, make sure to create a `.env` file with the required parameters. You can use the provided `.env.example` as a template.
@@ -38,7 +38,7 @@ Follow these steps to use the installation script and install jexactyl:
 3. **Run the Installation Script:** Execute the installation script with the following command:
 
     ```bash
-    ./install-jexactyl.sh
+    ./install.sh
     ```
 
 4. **Follow On-Screen Prompts:** The script will guide you through the installation process. Follow any on-screen prompts and provide necessary information when asked.
